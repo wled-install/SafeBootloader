@@ -18,6 +18,7 @@ This project is a pure ESP-IDF application and is currently based on and tested 
 2) When an OTA update writes a new firmware image (for example after a successful OTA update):
 `update_ota_crc();`
 These functions calculate and store CRC values used by the bootloader to verify the integrity of the partitions.
+- from your application build do not flash bootloader, only the app!!!
 
 ## How It Works
 - The bootloader provides a simple redundancy mechanism for firmware and filesystem data.
