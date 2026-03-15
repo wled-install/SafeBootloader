@@ -13,7 +13,7 @@ This project is a pure ESP-IDF application and is currently based on and tested 
  - Flash the compiled bootloader and partition table to your ESP32 using esptool.py.
  - In this repo under build/bootloader you will find compiled version for ESP32 with 8MB Flash
  - Use the provided partitions.csv in your application project.
- - Integrate the files safe_boot_functions.cpp and safe_boot_functions.h into your firmware.
+ - Integrate the files safe_boot_functions.cpp and safe_boot_functions.h (from APP_FUNCTIONS) into your firmware. Use compiler flag WLED_ENABLE_SAFE_BOOT to enable.
  - Call the following functions from your application:
 1) When the SPIFFS partition is modified (for example after writing files):
 `update_spiffs_crc();`
