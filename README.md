@@ -11,6 +11,7 @@ This project is a pure ESP-IDF application and is currently based on and tested 
 
 ## How to Use
  - Flash the compiled bootloader and partition table to your ESP32 using esptool.py.
+ - In this repo under build/bootloader you will find compiled version for ESP32 with 8MB Flash
  - Use the provided partitions.csv in your application project.
  - Integrate the files safe_boot_functions.cpp and safe_boot_functions.h into your firmware.
  - Call the following functions from your application:
