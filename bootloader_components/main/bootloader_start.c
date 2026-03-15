@@ -10,6 +10,9 @@
 #include "esp_flash_partitions.h"
 #include "esp_rom_crc.h"
 #include "esp32/rom/spi_flash.h"
+#include "esp_image_format.h"
+#include "bootloader_sha.h"
+#include "bootloader_flash.h"
 
 #include "soc/timer_group_reg.h"
 #include "soc/timer_group_struct.h"
@@ -33,7 +36,6 @@ static const char *TAG = "safe_boot";
 
 typedef struct {
     uint32_t magic;
-    uint32_t crc_app;       // CRC OTA
     uint32_t crc_spiffs;    // CRC SPIFFS / Backup
     uint32_t size_spiffs;   // Größe SPIFFS / Backup
 } crc_group_t;
@@ -189,6 +191,39 @@ static esp_err_t write_crc_partition(const esp_partition_info_t *part, crc_group
     return ESP_OK;
 }
 
+#define BUF 1024
+
+static bool compute_image_sha(const esp_partition_pos_t *pos, uint8_t sha[32])
+{
+    esp_image_metadata_t meta;
+
+    if (esp_image_verify(ESP_IMAGE_VERIFY_SILENT, pos, &meta) != ESP_OK)
+        return false;
+
+    bootloader_sha256_handle_t ctx = bootloader_sha256_start();
+
+    uint8_t buf[BUF];
+    uint32_t remaining = meta.image_len;
+    uint32_t addr = pos->offset;
+
+    while (remaining) {
+
+        uint32_t len = remaining > BUF ? BUF : remaining;
+
+        if (esp_rom_spiflash_read(addr, buf, len) != ESP_OK)
+            return false;
+
+        bootloader_sha256_data(ctx, buf, len);
+
+        addr += len;
+        remaining -= len;
+    }
+
+    bootloader_sha256_finish(ctx, sha);
+
+    return true;
+}
+
 /* -----------------------------------------------------------
    OTA Sync
 ----------------------------------------------------------- */
@@ -199,43 +234,47 @@ static void handle_ota_sync(int boot_index)
 
     const esp_partition_info_t *ota0 = find_partition(PART_TYPE_APP, PART_SUBTYPE_APP_OTA_0);
     const esp_partition_info_t *ota1 = find_partition(PART_TYPE_APP, PART_SUBTYPE_APP_OTA_1);
-    if (!ota0 || !ota1 || !crc_0_part || !crc_1_part) return;
+    if (!ota0 || !ota1) return;
 
-    uint32_t crc0 = flash_crc(ota0->pos.offset, ota0->pos.size);
-    uint32_t crc1 = flash_crc(ota1->pos.offset, ota1->pos.size);
+	esp_partition_pos_t pos0 = {
+		.offset = ota0->pos.offset,
+		.size   = ota0->pos.size
+	};
 
-    bool valid0 = (crc_data_0.magic == CRC_MAGIC) && (crc0 == crc_data_0.crc_app);
-    bool valid1 = (crc_data_1.magic == CRC_MAGIC) && (crc1 == crc_data_1.crc_app);
+	esp_partition_pos_t pos1 = {
+		.offset = ota1->pos.offset,
+		.size   = ota1->pos.size
+	};
+
+	uint8_t sha0[32];
+    uint8_t sha1[32];
+
+    bool valid0 = compute_image_sha(&pos0, sha0);
+    bool valid1 = compute_image_sha(&pos1, sha1);
 	
-	//ESP_LOGI(TAG,"OTA0 CRC calc / read: 0x%08X/0x%08X; Magic: 0x%08X",crc0, crc_data_0.crc_app, crc_data_0.magic);
-	//ESP_LOGI(TAG,"OTA1 CRC calc / read: 0x%08X/0x%08X; Magic: 0x%08X",crc1, crc_data_1.crc_app, crc_data_1.magic);
+	ESP_LOG_BUFFER_HEX("BOOT", sha0, 32);
+    ESP_LOG_BUFFER_HEX("BOOT", sha1, 32);
 	
 	bool running_is_ota0 = (boot_index == 0);
 	bool running_is_ota1 = (boot_index == 1);
+	
+	bool identical = (memcmp(sha0, sha1, 32) == 0);
 
 	if (valid0 && valid1) {
-		if (running_is_ota0 && crc0!=crc1) {
+		if (running_is_ota0 && !identical) {
             ESP_LOGI(TAG, "OTA0 is current FW: sync OTA0 -> OTA1");
             flash_copy(ota0->pos.offset, ota1->pos.offset, ota0->pos.size);
-            crc_data_1.crc_app = crc0;
-            write_crc_partition(crc_1_part, &crc_data_1);
-        } else if (running_is_ota1 && crc0!=crc1) {
+        } else if (running_is_ota1 && !identical) {
             ESP_LOGI(TAG, "OTA1 is current FW: sync OTA1 -> OTA0");
             flash_copy(ota1->pos.offset, ota0->pos.offset, ota1->pos.size);
-            crc_data_0.crc_app = crc1;
-            write_crc_partition(crc_0_part, &crc_data_0);
         }
 	
     } else if (valid0) {
 		ESP_LOGW(TAG, "OTA0 valid, but OTA1 not: sync OTA0 -> OTA1");
 		flash_copy(ota0->pos.offset, ota1->pos.offset, ota0->pos.size);
-		crc_data_1.crc_app = crc0;
-		write_crc_partition(crc_1_part, &crc_data_1);
     } else if (valid1) {
         ESP_LOGW(TAG, "OTA1 valid, but OTA0 not: sync OTA1 -> OTA0");
         flash_copy(ota1->pos.offset, ota0->pos.offset, ota1->pos.size);
-        crc_data_0.crc_app = crc1;
-        write_crc_partition(crc_0_part, &crc_data_0);
     } else {
         ESP_LOGE(TAG, "Both OTA partitions invalid!");
     }
@@ -316,15 +355,6 @@ static void crc_init_if_empty()
     if (!init_needed) return;
 
     ESP_LOGW(TAG, "Initializing CRC partitions...");
-
-    // OTA CRC initialisieren
-    const esp_partition_info_t *ota0 = find_partition(PART_TYPE_APP, PART_SUBTYPE_APP_OTA_0);
-    if (ota0) {
-        crc_data_0.crc_app = flash_crc(ota0->pos.offset, ota0->pos.size);
-        crc_data_0.crc_spiffs = 0;  // SPIFFS noch nicht gesetzt
-        crc_data_0.size_spiffs = 0;
-        crc_data_0.magic = CRC_MAGIC;
-    }
 
     // SPIFFS CRC initialisieren
     const esp_partition_info_t *spiffs = find_partition(PART_TYPE_DATA, PART_SUBTYPE_DATA_SPIFFS);
