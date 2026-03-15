@@ -15,17 +15,12 @@ This project is a pure ESP-IDF application and is currently based on and tested 
  - In this repo under build/bootloader you will find compiled version for ESP32 with 8MB Flash
  - Use the provided partitions.csv in your application project.
  - Integrate the files safe_boot_functions.cpp and safe_boot_functions.h (from APP_FUNCTIONS) into your firmware. Use compiler flag WLED_ENABLE_SAFE_BOOT to enable.
- - Call the following functions from your application:
-1) When the SPIFFS partition is modified (for example after writing files):
+ - Call the following functions from your application when the SPIFFS partition is modified (for example after writing files):
 `update_spiffs_crc();`
-2) When an OTA update writes a new firmware image (for example after a successful OTA update):
-`update_ota_crc();`
-These functions calculate and store CRC values used by the bootloader to verify the integrity of the partitions.
+   This function calculates and stores CRC values used by the bootloader to verify the integrity of the partitions.
 - from your application build do not flash bootloader, only the app!!!
-- Important: when updating application using esptool, clear both crc partitions (like flash "00") to invalidate magic number. Bootloader will init them. otehrwise new application wil lbe marked as invalid and replaced by the old version strored in ota_1.
 
 ## How It Works
 - The bootloader provides a simple redundancy mechanism for firmware and filesystem data.
 - SPIFFS Protection: Two SPIFFS partitions are used: spiffs and spiffs_backup. For each partition a CRC value is stored. During boot: If one partition is corrupted → it is automatically restored from the valid mirror.
-- OTA Firmware Protection: Two firmware partitions are used: ota_0 and ota_1 (as usual). After each OTA update: the CRC of the updated partition is calculated
-the value is stored in a dedicated CRC partition. During boot: The bootloader verifies the CRC of the currently selected OTA partition. If the CRC check fails → the bootloader automatically restores from the other OTA partition.
+- OTA Firmware Protection: Two firmware partitions are used ota_0 and ota_1 (as usual). Application's bin file has SHA256 at the end. It is used by bootloader to check integrity. During boot: If integrity check fails for one OTA partition, the bootloader automatically restores from the other OTA partition. Additionally, if ota partition, that is not actual, different from the actual one, then the actual one is mirrored to the another to have two valid copies.
