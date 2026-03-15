@@ -1,7 +1,7 @@
 # SafeBootloader
 
 Bootloader for the ESP32 that maintains mirrored OTA (ota_0 / ota_1) and SPIFFS partitions and restores them automatically if corruption is detected.
-It is intended to prevent corruption during operation, it does not help when corruption happens during intended flash write operations as it claculates crc from data already written.
+It is intended to prevent corruption during operation (not 100%, but minimize the risk), it does not help when corruption happens during intended flash write operations as it claculates crc from data already written.
 
 This project is a pure ESP-IDF application and is currently based on and tested with v4.4.8.
 
