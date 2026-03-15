@@ -7,6 +7,7 @@ This project is a pure ESP-IDF application and is currently based on and tested 
 ## How to Compile
 - Install ESP-IDF version 4.4.8.
 - In the project directory run: `idf.py build`
+- Use `idf.py menuconfig`, 'Bootloader config' if needed, for example to change log verbosity level
 
 ## How to Use
  - Flash the compiled bootloader and partition table to your ESP32 using esptool.py.
