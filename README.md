@@ -22,6 +22,7 @@ This project is a pure ESP-IDF application and is currently based on and tested 
 `update_ota_crc();`
 These functions calculate and store CRC values used by the bootloader to verify the integrity of the partitions.
 - from your application build do not flash bootloader, only the app!!!
+- Important: when updating application using esptool, clear both crc partitions (like flash "00") to invalidate magic number. Bootloader will init them. otehrwise new application wil lbe marked as invalid and replaced by the old version strored in ota_1.
 
 ## How It Works
 - The bootloader provides a simple redundancy mechanism for firmware and filesystem data.
